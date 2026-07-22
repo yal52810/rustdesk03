@@ -1,0 +1,14 @@
+main:
+  push:
+    - docker:
+        image: ubuntu:22.04
+      stages:
+        - name: build win64 release
+          jobs:
+            build:
+              steps:
+                - run: apt update && apt install -y curl git unzip clang llvm cmake ninja-build pkg-config
+                - run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+                - run: source "$HOME/.cargo/env" && rustup target add x86_64-pc-windows-msvc
+                - run: git clone https://github.com/flutter/flutter.git -b stable /opt/flutter
+                - run: export PATH="/opt/flutter/bin:$PATH" && cd rustdesk-1.4.9/rustdesk-1.4.9 && cd flutter && flutter pub get && flutter build windows --release && cd .. && cargo build --release
