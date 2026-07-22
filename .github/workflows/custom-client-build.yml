@@ -113,9 +113,9 @@ jobs:
       matrix:
         include:
           - flavor: official
-            cargo_features: inline,vram,hwcodec
+            cargo_features: inline
           - flavor: test-password
-            cargo_features: inline,vram,hwcodec,beta-locked
+            cargo_features: inline,beta-locked
     steps:
       - uses: actions/checkout@v4
         with:
@@ -127,6 +127,7 @@ jobs:
         with:
           toolchain: nightly-2023-10-13-i686-pc-windows-msvc
           targets: i686-pc-windows-msvc
+          components: rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           prefix-key: win32-${{ matrix.flavor }}
