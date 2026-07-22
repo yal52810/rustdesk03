@@ -1,0 +1,120 @@
+version: 1.0.{build}
+image: Visual Studio 2022
+
+environment:
+  RUST_VERSION: "1.75.0"
+  FLUTTER_VERSION: "3.24.5"
+
+install:
+  # Install Rust 1.75 from USTC mirror
+  - ps: |
+      $msi = "rust-$env:RUST_VERSION-x86_64-pc-windows-msvc.msi"
+      Invoke-WebRequest -Uri "https://mirrors.ustc.edu.cn/rust-static/dist/$msi" -OutFile rust.msi
+      Start-Process msiexec -ArgumentList "/i rust.msi /quiet" -Wait
+      $env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
+      [Environment]::SetEnvironmentVariable("Path", "$env:USERPROFILE\.cargo\bin;$([Environment]::GetEnvironmentVariable('Path','Machine'))", "Machine")
+      # Configure cargo mirror
+      New-Item -Force -ItemType Directory "$env:USERPROFILE\.cargo" | Out-Null
+      @"
+      [source.crates-io]
+      replace-with = 'ustc'
+      [source.ustc]
+      registry = "sparse+https://mirrors.ustc.edu.cn/crates.io-index/"
+      "@ | Out-File -FilePath "$env:USERPROFILE\.cargo\config.toml" -Encoding UTF8
+      rustc --version
+      cargo --version
+
+  # Install Flutter
+  - ps: |
+      $url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_$env:FLUTTER_VERSION-stable.zip"
+      Invoke-WebRequest -Uri $url -OutFile flutter.zip
+      Expand-Archive -Force flutter.zip -DestinationPath C:\
+      $env:Path = "C:\flutter\bin;$env:Path"
+      [Environment]::SetEnvironmentVariable("Path", "C:\flutter\bin;$([Environment]::GetEnvironmentVariable('Path','Machine'))", "Machine")
+      flutter config --no-analytics --disable-telemetry
+      flutter --version
+
+  # Generate flutter-rust-bridge code
+  - ps: |
+      $env:Path = "C:\flutter\bin;$env:USERPROFILE\.cargo\bin;$env:Path"
+      cargo install cargo-expand --version 1.0.95 --locked
+      cargo install flutter_rust_bridge_codegen --version 1.80.1 --features "uuid" --locked
+      # Fix extended_text version for Flutter 3.22.3 compatibility
+      (Get-Content flutter\pubspec.yaml) -replace 'extended_text: 14.0.0', 'extended_text: 13.0.0' | Set-Content flutter\pubspec.yaml
+      cd flutter
+      flutter pub get
+      cd ..
+      flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart --c-output ./flutter/macos/Runner/bridge_generated.h
+
+build_script:
+  # ==================== Win64 Release ====================
+  - ps: |
+      $env:Path = "C:\flutter\bin;$env:USERPROFILE\.cargo\bin;$env:Path"
+      cd flutter
+      flutter pub get
+      flutter build windows --release
+      cd ..
+      cargo build --release --target x86_64-pc-windows-msvc
+      # Package
+      New-Item -Force -ItemType Directory dist-release
+      Copy-Item -Recurse "flutter\build\windows\x64\runner\Release\*" dist-release
+      Copy-Item "target\x86_64-pc-windows-msvc\release\rustdesk.exe" dist-release
+      cd dist-release
+      7z a ..\rustdesk-win64-release.zip *
+      cd ..
+
+  # ==================== Win64 Beta ====================
+  - ps: |
+      $env:Path = "C:\flutter\bin;$env:USERPROFILE\.cargo\bin;$env:Path"
+      cd flutter
+      flutter build windows --release --dart-define=BETA_LOCKED=true
+      cd ..
+      cargo build --release --target x86_64-pc-windows-msvc --features beta-locked
+      # Package
+      New-Item -Force -ItemType Directory dist-beta
+      Copy-Item -Recurse "flutter\build\windows\x64\runner\Release\*" dist-beta
+      Copy-Item "target\x86_64-pc-windows-msvc\release\rustdesk.exe" dist-beta
+      cd dist-beta
+      7z a ..\rustdesk-win64-beta.zip *
+      cd ..
+
+  # ==================== Win32 Release ====================
+  - ps: |
+      $env:Path = "C:\flutter\bin;$env:USERPROFILE\.cargo\bin;$env:Path"
+      rustup target add i686-pc-windows-msvc
+      cd flutter
+      flutter build windows --release
+      cd ..
+      cargo build --release --target i686-pc-windows-msvc
+      # Package
+      New-Item -Force -ItemType Directory dist32-release
+      Copy-Item -Recurse "flutter\build\windows\x86\runner\Release\*" dist32-release
+      Copy-Item "target\i686-pc-windows-msvc\release\rustdesk.exe" dist32-release
+      cd dist32-release
+      7z a ..\rustdesk-win32-release.zip *
+      cd ..
+
+  # ==================== Win32 Beta ====================
+  - ps: |
+      $env:Path = "C:\flutter\bin;$env:USERPROFILE\.cargo\bin;$env:Path"
+      cd flutter
+      flutter build windows --release --dart-define=BETA_LOCKED=true
+      cd ..
+      cargo build --release --target i686-pc-windows-msvc --features beta-locked
+      # Package
+      New-Item -Force -ItemType Directory dist32-beta
+      Copy-Item -Recurse "flutter\build\windows\x86\runner\Release\*" dist32-beta
+      Copy-Item "target\i686-pc-windows-msvc\release\rustdesk.exe" dist32-beta
+      cd dist32-beta
+      7z a ..\rustdesk-win32-beta.zip *
+      cd ..
+
+artifacts:
+  - path: rustdesk-win64-release.zip
+    name: win64-release
+  - path: rustdesk-win64-beta.zip
+    name: win64-beta
+  - path: rustdesk-win32-release.zip
+    name: win32-release
+  - path: rustdesk-win32-beta.zip
+    name: win32-beta
