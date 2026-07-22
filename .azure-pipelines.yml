@@ -1,0 +1,65 @@
+trigger:
+  branches:
+    include:
+      - main
+      - master
+
+jobs:
+  - job: win64_release
+    displayName: "Win64 Release (no password)"
+    pool:
+      vmImage: "windows-latest"
+    steps:
+      - checkout: self
+        submodules: recursive
+
+      - task: PowerShell@2
+        displayName: "Install Rust 1.75"
+        inputs:
+          targetType: inline
+          script: |
+            Invoke-WebRequest -Uri https://win.rustup.rs/x86_64 -OutFile rustup-init.exe
+            .\rustup-init.exe -y --default-toolchain 1.75 --target x86_64-pc-windows-msvc
+            echo "##vso[task.prependpath]$env:USERPROFILE\.cargo\bin"
+
+      - task: PowerShell@2
+        displayName: "Install Flutter 3.24.5"
+        inputs:
+          targetType: inline
+          script: |
+            Invoke-WebRequest -Uri https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.24.5-stable.zip -OutFile flutter.zip
+            Expand-Archive flutter.zip -DestinationPath C:\
+            echo "##vso[task.prependpath]C:\flutter\bin"
+            flutter config --no-analytics
+
+      - task: PowerShell@2
+        displayName: "Build Flutter"
+        inputs:
+          targetType: inline
+          script: |
+            cd flutter
+            flutter pub get
+            flutter build windows --release
+
+      - task: PowerShell@2
+        displayName: "Build Rust"
+        inputs:
+          targetType: inline
+          script: |
+            cargo build --release --target x86_64-pc-windows-msvc
+
+      - task: PowerShell@2
+        displayName: "Package"
+        inputs:
+          targetType: inline
+          script: |
+            mkdir dist
+            Copy-Item -Recurse "flutter/build/windows/x64/runner/Release/*" dist
+            Copy-Item "target/x86_64-pc-windows-msvc/release/rustdesk.exe" dist
+            cd dist
+            7z a ..\rustdesk-win64-release.zip *
+
+      - task: PublishBuildArtifacts@1
+        inputs:
+          PathtoPublish: rustdesk-win64-release.zip
+          ArtifactName: win64-release
