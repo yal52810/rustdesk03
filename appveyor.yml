@@ -1,11 +1,7 @@
 version: 1.0.{build}
 image: Visual Studio 2022
-build: false
 
-install:
-  - echo ===== INSTALL WORKING =====
-  - echo Current directory is %CD%
-  - dir appveyor.yml
-
-test_script:
-  - echo ===== TEST WORKING =====
+build_script:
+  - echo HELLO_FROM_BUILD_SCRIPT
+  - echo CurrentDir=%CD%
+  - dir
