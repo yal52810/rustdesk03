@@ -4,15 +4,6 @@ on:
   push:
     branches: [main, master]
   workflow_dispatch:
-    inputs:
-      build_beta:
-        description: 'Build beta (password-locked) version'
-        type: boolean
-        default: true
-      build_release:
-        description: 'Build release (no password) version'
-        type: boolean
-        default: true
 
 env:
   RUST_VERSION: "1.75"
@@ -25,38 +16,20 @@ jobs:
   build-windows:
     name: ${{ matrix.name }}
     needs: [generate-bridge]
-    runs-on: self-hosted
+    runs-on: windows-2022
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 2
       matrix:
         include:
           - name: win64-release
-            arch: x86_64
             target: x86_64-pc-windows-msvc
             flutter-arch: x64
-            variant: release
             cargo-features: ""
             dart-defines: ""
           - name: win64-beta
-            arch: x86_64
             target: x86_64-pc-windows-msvc
             flutter-arch: x64
-            variant: beta
-            cargo-features: "--features beta-locked"
-            dart-defines: "--dart-define=BETA_LOCKED=true"
-          - name: win32-release
-            arch: i686
-            target: i686-pc-windows-msvc
-            flutter-arch: x86
-            variant: release
-            cargo-features: ""
-            dart-defines: ""
-          - name: win32-beta
-            arch: i686
-            target: i686-pc-windows-msvc
-            flutter-arch: x86
-            variant: beta
             cargo-features: "--features beta-locked"
             dart-defines: "--dart-define=BETA_LOCKED=true"
 
@@ -71,6 +44,18 @@ jobs:
         with:
           name: bridge-artifact
           path: ./
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: ${{ matrix.target }}
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
 
       - name: Build Flutter
         run: |
