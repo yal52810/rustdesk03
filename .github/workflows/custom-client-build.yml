@@ -13,6 +13,8 @@ on:
 env:
   RUST_VERSION: "1.75"
   FLUTTER_VERSION: "3.24.5"
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+  VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
 
 jobs:
   generate-bridge:
@@ -89,4 +91,60 @@ jobs:
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ${{ env.ARTIFACT_NAME }}.zip
+          retention-days: 30
+
+  build-windows-32:
+    name: win32-release
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: i686-pc-windows-msvc
+
+      - name: Setup vcpkg with Github Actions binary cache
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: C:\vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        run: |
+          $VCPKG_ROOT/vcpkg install --triplet x86-windows-static --x-install-root="$VCPKG_ROOT/installed"
+        shell: bash
+
+      - name: Build virtual display dylib
+        run: |
+          cd libs/virtual_display/dylib
+          cargo build --release --target i686-pc-windows-msvc
+
+      - name: Build Rust (sciter)
+        run: |
+          python3 res/inline-sciter.py
+          cargo build --locked --release --target i686-pc-windows-msvc --features inline
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "target/i686-pc-windows-msvc/release/rustdesk.exe" dist/
+          cd dist
+          7z a "../rustdesk-win32-release.zip" *
+          cd ..
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustdesk-win32-release
+          path: rustdesk-win32-release.zip
           retention-days: 30
