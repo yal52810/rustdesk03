@@ -1,14 +1,90 @@
 main:
   push:
-    - docker:
-        image: ubuntu:22.04
+    - runner:
+        namespace: group
+        tags:
+          - windows
       stages:
+        - name: check environment
+          script: |
+            Write-Host "=== System Info ==="
+            systeminfo | findstr /B /C:"OS Name" /C:"OS Version"
+            Write-Host "=== Rust ==="
+            rustc --version
+            cargo --version
+            Write-Host "=== Flutter ==="
+            flutter --version
+            Write-Host "=== Git ==="
+            git --version
+            Write-Host "=== LLVM ==="
+            clang --version
+
         - name: build win64 release
-          jobs:
-            build:
-              steps:
-                - run: apt update && apt install -y curl git unzip clang llvm cmake ninja-build pkg-config
-                - run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-                - run: source "$HOME/.cargo/env" && rustup target add x86_64-pc-windows-msvc
-                - run: git clone https://github.com/flutter/flutter.git -b stable /opt/flutter
-                - run: export PATH="/opt/flutter/bin:$PATH" && cd rustdesk-1.4.9/rustdesk-1.4.9 && cd flutter && flutter pub get && flutter build windows --release && cd .. && cargo build --release
+          script: |
+            Write-Host "=== Building Win64 Release (no password) ==="
+            cd flutter
+            flutter pub get
+            flutter build windows --release
+            cd ..
+            cargo build --release --target x86_64-pc-windows-msvc
+            Write-Host "=== Packaging Win64 Release ==="
+            $dist = "dist/win64-release"
+            New-Item -ItemType Directory -Force -Path $dist
+            Copy-Item -Recurse "flutter/build/windows/x64/runner/Release/*" $dist
+            Copy-Item "target/x86_64-pc-windows-msvc/release/rustdesk.exe" $dist
+            cd dist
+            7z a ../rustdesk-win64-release.zip win64-release
+            cd ..
+
+        - name: build win64 beta
+          script: |
+            Write-Host "=== Building Win64 Beta (with password) ==="
+            cd flutter
+            flutter build windows --release --dart-define=BETA_LOCKED=true
+            cd ..
+            cargo build --release --target x86_64-pc-windows-msvc --features beta-locked
+            Write-Host "=== Packaging Win64 Beta ==="
+            $dist = "dist/win64-beta"
+            New-Item -ItemType Directory -Force -Path $dist
+            Copy-Item -Recurse "flutter/build/windows/x64/runner/Release/*" $dist
+            Copy-Item "target/x86_64-pc-windows-msvc/release/rustdesk.exe" $dist
+            cd dist
+            7z a ../rustdesk-win64-beta.zip win64-beta
+            cd ..
+
+        - name: build win32 release
+          script: |
+            Write-Host "=== Building Win32 Release (no password) ==="
+            cd flutter
+            flutter build windows --release
+            cd ..
+            cargo build --release --target i686-pc-windows-msvc
+            Write-Host "=== Packaging Win32 Release ==="
+            $dist = "dist/win32-release"
+            New-Item -ItemType Directory -Force -Path $dist
+            Copy-Item -Recurse "flutter/build/windows/x86/runner/Release/*" $dist
+            Copy-Item "target/i686-pc-windows-msvc/release/rustdesk.exe" $dist
+            cd dist
+            7z a ../rustdesk-win32-release.zip win32-release
+            cd ..
+
+        - name: build win32 beta
+          script: |
+            Write-Host "=== Building Win32 Beta (with password) ==="
+            cd flutter
+            flutter build windows --release --dart-define=BETA_LOCKED=true
+            cd ..
+            cargo build --release --target i686-pc-windows-msvc --features beta-locked
+            Write-Host "=== Packaging Win32 Beta ==="
+            $dist = "dist/win32-beta"
+            New-Item -ItemType Directory -Force -Path $dist
+            Copy-Item -Recurse "flutter/build/windows/x86/runner/Release/*" $dist
+            Copy-Item "target/i686-pc-windows-msvc/release/rustdesk.exe" $dist
+            cd dist
+            7z a ../rustdesk-win32-beta.zip win32-beta
+            cd ..
+
+        - name: upload artifacts
+          script: |
+            Write-Host "=== Build Artifacts ==="
+            Get-ChildItem *.zip
