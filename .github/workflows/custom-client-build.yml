@@ -20,7 +20,8 @@ jobs:
   generate-bridge:
     uses: ./.github/workflows/bridge.yml
 
-  build-windows:
+  # ==================== 64-bit Flutter Build ====================
+  build-windows-64:
     name: ${{ matrix.name }}
     needs: [generate-bridge]
     runs-on: windows-2022
@@ -32,11 +33,13 @@ jobs:
           - name: win64-release
             target: x86_64-pc-windows-msvc
             flutter-arch: x64
+            vcpkg-triplet: x64-windows-static
             cargo-features: ""
             dart-defines: ""
           - name: win64-beta
             target: x86_64-pc-windows-msvc
             flutter-arch: x64
+            vcpkg-triplet: x64-windows-static
             cargo-features: "--features beta-locked"
             dart-defines: "--dart-define=BETA_LOCKED=true"
 
@@ -58,21 +61,33 @@ jobs:
           toolchain: ${{ env.RUST_VERSION }}
           targets: ${{ matrix.target }}
 
+      - name: Setup vcpkg with Github Actions binary cache
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: C:\vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        run: |
+          $VCPKG_ROOT/vcpkg install --triplet ${{ matrix.vcpkg-triplet }} --x-install-root="$VCPKG_ROOT/installed"
+        shell: bash
+
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: "stable"
           flutter-version: ${{ env.FLUTTER_VERSION }}
 
+      - name: Build Rust lib (with flutter feature)
+        run: |
+          cargo build --locked --features flutter --lib --release --target ${{ matrix.target }} ${{ matrix.cargo-features }}
+
       - name: Build Flutter
         run: |
           cd flutter
           flutter pub get
           flutter build windows --release ${{ matrix.dart-defines }}
-
-      - name: Build Rust
-        run: |
-          cargo build --release --target ${{ matrix.target }} ${{ matrix.cargo-features }}
 
       - name: Package
         shell: bash
@@ -93,6 +108,7 @@ jobs:
           path: ${{ env.ARTIFACT_NAME }}.zip
           retention-days: 30
 
+  # ==================== 32-bit Sciter Build ====================
   build-windows-32:
     name: win32-release
     runs-on: windows-2022
@@ -105,11 +121,17 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install Rust toolchain
+      - name: Install LLVM and Clang (32-bit)
+        uses: rustdesk-org/install-llvm-action-32bit@6aa7d9ad3df84dff01cd4596dd0fc880a7f47fce
+        with:
+          version: "15.0.6"
+
+      - name: Install Rust toolchain (nightly for 32-bit sciter)
         uses: dtolnay/rust-toolchain@v1
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          toolchain: nightly-2023-10-13-i686-pc-windows-msvc
           targets: i686-pc-windows-msvc
+          components: rustfmt
 
       - name: Setup vcpkg with Github Actions binary cache
         uses: lukka/run-vcpkg@v11
@@ -123,22 +145,21 @@ jobs:
           $VCPKG_ROOT/vcpkg install --triplet x86-windows-static --x-install-root="$VCPKG_ROOT/installed"
         shell: bash
 
-      - name: Build virtual display dylib
-        run: |
-          cd libs/virtual_display/dylib
-          cargo build --release --target i686-pc-windows-msvc
-
-      - name: Build Rust (sciter)
+      - name: Build Rust (sciter inline)
+        shell: bash
         run: |
           python3 res/inline-sciter.py
-          cargo build --locked --release --target i686-pc-windows-msvc --features inline
+          sed -i 's/branch = "dyn"/branch = "dyn_x86"/g' ./Cargo.toml
+          cargo update -p sciter-rs --precise 674e07d3066ca9a92ced3816203ab6b652629d1e
+          cargo build --locked --features inline,vram,hwcodec --release --bins --target i686-pc-windows-msvc
+          mkdir -p ./Release
+          mv ./target/i686-pc-windows-msvc/release/rustdesk.exe ./Release/rustdesk.exe
+          curl -LJ -o ./Release/sciter.dll https://github.com/c-smile/sciter-sdk/raw/master/bin.win/x32/sciter.dll
 
       - name: Package
         shell: bash
         run: |
-          mkdir -p dist
-          cp "target/i686-pc-windows-msvc/release/rustdesk.exe" dist/
-          cd dist
+          cd Release
           7z a "../rustdesk-win32-release.zip" *
           cd ..
 
