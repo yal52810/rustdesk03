@@ -1,18 +1,21 @@
-name: Custom Client Build (Win Release + Beta)
+name: Windows Custom Client
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      reason:
-        description: 'Trigger reason'
-        required: false
-        default: 'manual'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-custom-client-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   RUST_VERSION: "1.75"
   FLUTTER_VERSION: "3.24.5"
+  LLVM_VERSION: "15.0.6"
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
   VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
 
@@ -20,152 +23,135 @@ jobs:
   generate-bridge:
     uses: ./.github/workflows/bridge.yml
 
-  # ==================== 64-bit Flutter Build ====================
-  build-windows-64:
-    name: ${{ matrix.name }}
-    needs: [generate-bridge]
+  build-win64:
+    name: Win64 ${{ matrix.flavor }}
+    needs: generate-bridge
     runs-on: windows-2022
     strategy:
       fail-fast: false
       max-parallel: 2
       matrix:
         include:
-          - name: win64-release
-            target: x86_64-pc-windows-msvc
-            flutter-arch: x64
-            vcpkg-triplet: x64-windows-static
-            cargo-features: ""
-            dart-defines: ""
-          - name: win64-beta
-            target: x86_64-pc-windows-msvc
-            flutter-arch: x64
-            vcpkg-triplet: x64-windows-static
-            cargo-features: "--features beta-locked"
-            dart-defines: "--dart-define=BETA_LOCKED=true"
-
+          - flavor: official
+            beta_locked: "0"
+          - flavor: test-password
+            beta_locked: "1"
     steps:
-      - name: Checkout source code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Restore bridge files
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: bridge-artifact
           path: ./
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@v1
+      - uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: ${{ env.LLVM_VERSION }}
+      - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: ${{ env.RUST_VERSION }}
-          targets: ${{ matrix.target }}
-
-      - name: Setup vcpkg with Github Actions binary cache
-        uses: lukka/run-vcpkg@v11
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: win64-${{ matrix.flavor }}
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          architecture: x64
+      - name: Install RustDesk Flutter engine
+        shell: pwsh
+        run: |
+          flutter precache --windows
+          Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
+          Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
+          $enginePath = "C:/hostedtoolcache/windows/flutter/stable-${{ env.FLUTTER_VERSION }}-x64/bin/cache/artifacts/engine/windows-x64-release"
+          Copy-Item -Path windows-x64-release/* -Destination $enginePath -Recurse -Force
+      - name: Patch Flutter
+        shell: bash
+        run: |
+          cp .github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff "$(dirname "$(dirname "$(which flutter)")")"
+          cd "$(dirname "$(dirname "$(which flutter)")")"
+          git apply flutter_3.24.4_dropdown_menu_enableFilter.diff
+      - uses: lukka/run-vcpkg@v11
         with:
           vcpkgDirectory: C:\vcpkg
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
           doNotCache: false
-
-      - name: Install vcpkg dependencies
-        run: |
-          $VCPKG_ROOT/vcpkg install --triplet ${{ matrix.vcpkg-triplet }} --x-install-root="$VCPKG_ROOT/installed"
+      - name: Install x64 dependencies
         shell: bash
-
-      - name: Install Flutter
-        uses: subosito/flutter-action@v2
+        run: $VCPKG_ROOT/vcpkg install --triplet x64-windows-static --x-install-root="$VCPKG_ROOT/installed"
+      - name: Build Win64 client
+        shell: pwsh
+        env:
+          RUSTDESK_BETA_LOCKED: ${{ matrix.beta_locked }}
+        run: python3 .\build.py --portable --flutter --skip-portable-pack --hwcodec --vram
+      - name: Package Win64 client
+        shell: pwsh
+        run: |
+          $artifact = "rustdesk-1.4.9-win64-${{ matrix.flavor }}"
+          New-Item -ItemType Directory -Path "dist/$artifact" -Force | Out-Null
+          Copy-Item -Path "flutter/build/windows/x64/runner/Release/*" -Destination "dist/$artifact" -Recurse -Force
+          Compress-Archive -Path "dist/$artifact/*" -DestinationPath "dist/$artifact.zip" -Force
+      - uses: actions/upload-artifact@v4
         with:
-          channel: "stable"
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-
-      - name: Build Rust lib (with flutter feature)
-        run: |
-          cargo build --locked --features flutter --lib --release --target ${{ matrix.target }} ${{ matrix.cargo-features }}
-
-      - name: Build Flutter
-        run: |
-          cd flutter
-          flutter pub get
-          flutter build windows --release ${{ matrix.dart-defines }}
-
-      - name: Package
-        shell: bash
-        run: |
-          mkdir -p dist
-          ARTIFACT_NAME="rustdesk-${{ matrix.name }}"
-          cp -r "flutter/build/windows/${{ matrix.flutter-arch }}/runner/Release/"* dist/
-          cp "target/${{ matrix.target }}/release/rustdesk.exe" dist/
-          cd dist
-          7z a "../${ARTIFACT_NAME}.zip" *
-          cd ..
-          echo "ARTIFACT_NAME=${ARTIFACT_NAME}" >> $GITHUB_ENV
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.ARTIFACT_NAME }}
-          path: ${{ env.ARTIFACT_NAME }}.zip
+          name: rustdesk-1.4.9-win64-${{ matrix.flavor }}
+          path: dist/rustdesk-1.4.9-win64-${{ matrix.flavor }}.zip
+          if-no-files-found: error
           retention-days: 30
 
-  # ==================== 32-bit Sciter Build ====================
-  build-windows-32:
-    name: win32-release
+  build-win32:
+    name: Win32 ${{ matrix.flavor }}
     runs-on: windows-2022
     strategy:
       fail-fast: false
-
+      max-parallel: 2
+      matrix:
+        include:
+          - flavor: official
+            cargo_features: inline,vram,hwcodec
+          - flavor: test-password
+            cargo_features: inline,vram,hwcodec,beta-locked
     steps:
-      - name: Checkout source code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Install LLVM and Clang (32-bit)
-        uses: rustdesk-org/install-llvm-action-32bit@6aa7d9ad3df84dff01cd4596dd0fc880a7f47fce
+      - uses: rustdesk-org/install-llvm-action-32bit@6aa7d9ad3df84dff01cd4596dd0fc880a7f47fce
         with:
-          version: "15.0.6"
-
-      - name: Install Rust toolchain (nightly for 32-bit sciter)
-        uses: dtolnay/rust-toolchain@v1
+          version: ${{ env.LLVM_VERSION }}
+      - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2023-10-13-i686-pc-windows-msvc
           targets: i686-pc-windows-msvc
-          components: rustfmt
-
-      - name: Setup vcpkg with Github Actions binary cache
-        uses: lukka/run-vcpkg@v11
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: win32-${{ matrix.flavor }}
+      - uses: lukka/run-vcpkg@v11
         with:
           vcpkgDirectory: C:\vcpkg
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
           doNotCache: false
-
-      - name: Install vcpkg dependencies
-        run: |
-          $VCPKG_ROOT/vcpkg install --triplet x86-windows-static --x-install-root="$VCPKG_ROOT/installed"
+      - name: Install x86 dependencies
         shell: bash
-
-      - name: Build Rust (sciter inline)
+        run: $VCPKG_ROOT/vcpkg install --triplet x86-windows-static --x-install-root="$VCPKG_ROOT/installed"
+      - name: Build Win32 client
         shell: bash
         run: |
           python3 res/inline-sciter.py
-          sed -i 's/branch = "dyn"/branch = "dyn_x86"/g' ./Cargo.toml
+          sed -i 's/branch = "dyn"/branch = "dyn_x86"/g' Cargo.toml
           cargo update -p sciter-rs --precise 674e07d3066ca9a92ced3816203ab6b652629d1e
-          cargo build --locked --features inline,vram,hwcodec --release --bins --target i686-pc-windows-msvc
-          mkdir -p ./Release
-          mv ./target/i686-pc-windows-msvc/release/rustdesk.exe ./Release/rustdesk.exe
-          curl -LJ -o ./Release/sciter.dll https://github.com/c-smile/sciter-sdk/raw/master/bin.win/x32/sciter.dll
-
-      - name: Package
-        shell: bash
+          cargo build --locked --release --bins --target i686-pc-windows-msvc --features "${{ matrix.cargo_features }}"
+          mkdir -p "dist/rustdesk-1.4.9-win32-${{ matrix.flavor }}"
+          cp target/i686-pc-windows-msvc/release/rustdesk.exe "dist/rustdesk-1.4.9-win32-${{ matrix.flavor }}/rustdesk.exe"
+          curl -L --fail -o "dist/rustdesk-1.4.9-win32-${{ matrix.flavor }}/sciter.dll" https://github.com/c-smile/sciter-sdk/raw/master/bin.win/x32/sciter.dll
+      - name: Package Win32 client
+        shell: pwsh
         run: |
-          cd Release
-          7z a "../rustdesk-win32-release.zip" *
-          cd ..
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+          $artifact = "rustdesk-1.4.9-win32-${{ matrix.flavor }}"
+          Compress-Archive -Path "dist/$artifact/*" -DestinationPath "dist/$artifact.zip" -Force
+      - uses: actions/upload-artifact@v4
         with:
-          name: rustdesk-win32-release
-          path: rustdesk-win32-release.zip
+          name: rustdesk-1.4.9-win32-${{ matrix.flavor }}
+          path: dist/rustdesk-1.4.9-win32-${{ matrix.flavor }}.zip
+          if-no-files-found: error
           retention-days: 30

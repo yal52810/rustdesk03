@@ -280,6 +280,8 @@ def get_features(args):
         features.append('vram')
     if args.flutter:
         features.append('flutter')
+    if os.environ.get('RUSTDESK_BETA_LOCKED') == '1':
+        features.append('beta-locked')
     if args.unix_file_copy_paste:
         features.append('unix-file-copy-paste')
     if osx:
@@ -444,7 +446,8 @@ def build_flutter_windows(version, features, skip_portable_pack):
             print("cargo build failed, please check rust source code.")
             exit(-1)
     os.chdir('flutter')
-    system2('flutter build windows --release')
+    dart_defines = ' --dart-define=BETA_LOCKED=true' if os.environ.get('RUSTDESK_BETA_LOCKED') == '1' else ''
+    system2(f'flutter build windows --release{dart_defines}')
     os.chdir('..')
     shutil.copy2('target/release/deps/dylib_virtual_display.dll',
                  flutter_build_dir_2)

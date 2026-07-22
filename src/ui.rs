@@ -196,6 +196,21 @@ pub fn start(args: &mut [String]) {
 struct UI {}
 
 impl UI {
+    fn beta_needs_password(&self) -> bool {
+        crate::beta_lock::needs_password()
+    }
+    fn beta_verify_password(&self, password: String) -> bool {
+        crate::beta_lock::verify_password(&password)
+    }
+    fn beta_is_expired(&self) -> bool {
+        crate::beta_lock::is_expired()
+    }
+    fn beta_is_verified(&self) -> bool {
+        crate::beta_lock::is_verified()
+    }
+    fn beta_init_first_run(&self) {
+        crate::beta_lock::init_first_run();
+    }
     fn recent_sessions_updated(&self) -> bool {
         recent_sessions_updated()
     }
@@ -721,6 +736,11 @@ impl UI {
 
 impl sciter::EventHandler for UI {
     sciter::dispatch_script_call! {
+        fn beta_needs_password();
+        fn beta_verify_password(String);
+        fn beta_is_expired();
+        fn beta_is_verified();
+        fn beta_init_first_run();
         fn t(String);
         fn get_api_server();
         fn is_xfce();
