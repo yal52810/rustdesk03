@@ -1,11 +1,11 @@
 version: 1.0.{build}
 image: Visual Studio 2022
+build: false
 
 install:
-  - cmd: echo ===== INSTALL PHASE =====
-  - cmd: echo Current directory is %CD%
-  - cmd: dir appveyor.yml
+  - echo ===== INSTALL WORKING =====
+  - echo Current directory is %CD%
+  - dir appveyor.yml
 
-build_script:
-  - cmd: echo ===== BUILD PHASE =====
-  - cmd: ver
+test_script:
+  - echo ===== TEST WORKING =====
