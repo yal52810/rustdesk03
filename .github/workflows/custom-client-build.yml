@@ -17,9 +17,6 @@ on:
 env:
   RUST_VERSION: "1.75"
   FLUTTER_VERSION: "3.24.5"
-  LLVM_VERSION: "15.0.6"
-  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
-  VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
 
 jobs:
   generate-bridge:
@@ -28,60 +25,42 @@ jobs:
   build-windows:
     name: ${{ matrix.name }}
     needs: [generate-bridge]
-    runs-on: ${{ matrix.os }}
+    runs-on: self-hosted
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
-          # ---- 64-bit Release (no password) ----
           - name: win64-release
             arch: x86_64
             target: x86_64-pc-windows-msvc
-            os: windows-2022
             flutter-arch: x64
-            vcpkg-triplet: x64-windows-static
             variant: release
             cargo-features: ""
             dart-defines: ""
-          # ---- 64-bit Beta (password locked) ----
           - name: win64-beta
             arch: x86_64
             target: x86_64-pc-windows-msvc
-            os: windows-2022
             flutter-arch: x64
-            vcpkg-triplet: x64-windows-static
             variant: beta
             cargo-features: "--features beta-locked"
             dart-defines: "--dart-define=BETA_LOCKED=true"
-          # ---- 32-bit Release (no password) ----
           - name: win32-release
             arch: i686
             target: i686-pc-windows-msvc
-            os: windows-2022
             flutter-arch: x86
-            vcpkg-triplet: x86-windows-static
             variant: release
             cargo-features: ""
             dart-defines: ""
-          # ---- 32-bit Beta (password locked) ----
           - name: win32-beta
             arch: i686
             target: i686-pc-windows-msvc
-            os: windows-2022
             flutter-arch: x86
-            vcpkg-triplet: x86-windows-static
             variant: beta
             cargo-features: "--features beta-locked"
             dart-defines: "--dart-define=BETA_LOCKED=true"
 
     steps:
-      - name: Export GitHub Actions cache env
-        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-
       - name: Checkout source code
         uses: actions/checkout@v4
         with:
@@ -92,50 +71,6 @@ jobs:
         with:
           name: bridge-artifact
           path: ./
-
-      - name: Install LLVM and Clang
-        uses: KyleMayes/install-llvm-action@v2
-        with:
-          version: ${{ env.LLVM_VERSION }}
-
-      - name: Install Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: "stable"
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          architecture: x64
-
-      - name: Replace engine with rustdesk custom flutter engine (x64 only)
-        if: ${{ matrix.arch == 'x86_64' }}
-        run: |
-          flutter doctor -v
-          flutter precache --windows
-          Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
-          Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
-          mv -Force windows-x64-release/*  C:/hostedtoolcache/windows/flutter/stable-${{ env.FLUTTER_VERSION }}-x64/bin/cache/artifacts/engine/windows-x64-release/
-
-      - name: Patch flutter (x64)
-        if: ${{ matrix.arch == 'x86_64' }}
-        shell: bash
-        run: |
-          cp .github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff $(dirname $(dirname $(which flutter)))
-          cd $(dirname $(dirname $(which flutter)))
-          [[ "3.24.5" == ${{ env.FLUTTER_VERSION }} ]] && git apply flutter_3.24.4_dropdown_menu_enableFilter.diff
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@v1
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-          targets: ${{ matrix.target }}
-          components: "rustfmt"
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: ${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.variant }}
-
-      - name: Install vcpkg deps
-        run: |
-          vcpkg install --triplet ${{ matrix.vcpkg-triplet }} openssl
 
       - name: Build Flutter
         run: |
