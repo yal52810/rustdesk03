@@ -65,7 +65,11 @@ jobs:
           flutter precache --windows
           Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
           Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
-          $enginePath = "C:/hostedtoolcache/windows/flutter/stable-${{ env.FLUTTER_VERSION }}-x64/bin/cache/artifacts/engine/windows-x64-release"
+          $flutterCommand = Get-Command flutter -ErrorAction Stop
+          $flutterRoot = Split-Path -Parent (Split-Path -Parent $flutterCommand.Source)
+          $enginePath = Join-Path $flutterRoot "bin\cache\artifacts\engine\windows-x64-release"
+          New-Item -ItemType Directory -Path $enginePath -Force | Out-Null
+          Write-Host "Replacing Flutter engine in $enginePath"
           Copy-Item -Path windows-x64-release/* -Destination $enginePath -Recurse -Force
       - name: Patch Flutter
         shell: bash
