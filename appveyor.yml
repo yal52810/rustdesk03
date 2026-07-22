@@ -2,8 +2,10 @@ version: 1.0.{build}
 image: Visual Studio 2022
 build: off
 
-test_script:
-  - ps: |
-      Write-Host "appveyor.yml IS working!"
-      Write-Host "RustDesk build test"
-      rustc --version 2>$null; Write-Host "Rust not installed yet (expected)"
+init:
+  - cmd: echo HELLO_FROM_APPVEYOR
+
+install:
+  - cmd: echo INSTALL_STEP
+  - cmd: ver
+  - cmd: dir appveyor.yml
