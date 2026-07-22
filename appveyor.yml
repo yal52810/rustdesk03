@@ -1,7 +1,8 @@
-version: 1.0.{build}
-image: Visual Studio 2022
+build: off
 
 build_script:
-  - echo HELLO_FROM_BUILD_SCRIPT
+  - echo HELLO_WORLD_APPVEYOR
+  - ver
   - echo CurrentDir=%CD%
-  - dir
+  - dir Cargo.toml
+  - dir appveyor.yml
