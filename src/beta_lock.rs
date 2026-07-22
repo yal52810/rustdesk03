@@ -12,14 +12,6 @@ fn verified_path() -> std::path::PathBuf {
 }
 
 pub fn init_first_run() {
-    let path = timestamp_path();
-    if !path.exists() {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-        let _ = std::fs::write(&path, now.to_string());
-    }
 }
 
 pub fn get_remaining_seconds() -> i64 {
@@ -42,17 +34,23 @@ pub fn is_expired() -> bool {
 }
 
 pub fn verify_password(pwd: &str) -> bool {
-    if pwd == BETA_PASSWORD {
-        let path = verified_path();
-        let _ = std::fs::write(&path, "1");
-        true
-    } else {
-        false
+    if pwd != BETA_PASSWORD || is_expired() {
+        return false;
     }
+    let timestamp = timestamp_path();
+    if !timestamp.exists() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let _ = std::fs::write(&timestamp, now.to_string());
+    }
+    let _ = std::fs::write(verified_path(), "1");
+    true
 }
 
 pub fn is_verified() -> bool {
-    verified_path().exists()
+    verified_path().exists() && timestamp_path().exists() && !is_expired()
 }
 
 pub fn needs_password() -> bool {

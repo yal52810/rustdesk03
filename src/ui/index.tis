@@ -752,6 +752,7 @@ class App: Reactor.Component
                     </div>
                     {!outgoing_only ? <ConnectStatus @{this.connect_status} /> : ""}
                 </div>}
+                {handler.beta_needs_password() && handler.beta_is_verified() && !handler.beta_is_expired() ? <div #beta-countdown style="position:absolute;right:10px;bottom:10px;background:#333;color:white;padding:4px 10px;">{betaRemainingText(handler.beta_get_remaining_seconds())}</div> : ""}
                 <div #overlay style="position: absolute;size:*;background:black;opacity:0.5;display:none" />
             </div>; 
     }
@@ -1395,11 +1396,11 @@ function self.ready() {
     refreshCurrentUser();
     updateTheme();
     showBetaLock();
+    if (handler.beta_needs_password() && handler.beta_is_verified()) updateBetaCountdown();
 }
 
 function showBetaLock() {
     if (!handler.beta_needs_password()) return;
-    handler.beta_init_first_run();
     if (handler.beta_is_expired()) {
         msgbox(
             "custom-beta-expired-nocancel-nook",
@@ -1414,6 +1415,7 @@ function showBetaLock() {
         "Beta Version",
         <div .form .set-password>
             <div>Password required to continue</div>
+            <div>Trial duration: 24 hours after verification</div>
             <div><span>Password:</span><input|password name="password" .outline-focus /></div>
         </div>,
         "",
@@ -1421,6 +1423,8 @@ function showBetaLock() {
             if (!res || !handler.beta_verify_password((res.password || "").trim())) {
                 return "Password incorrect";
             }
+            if (app) app.update();
+            updateBetaCountdown();
         },
         220,
         get_msgbox_width()
@@ -1708,4 +1712,25 @@ function getHttpHeaders() {
 
 function getDeviceInfo() {
     return JSON.parse(handler.get_login_device_info());
+}
+
+function betaRemainingText(seconds) {
+    var h = (seconds / 3600).toInteger();
+    var m = ((seconds % 3600) / 60).toInteger();
+    var s = seconds % 60;
+    return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s;
+}
+
+function updateBetaCountdown() {
+    if (!handler.beta_needs_password()) return;
+    var remaining = handler.beta_get_remaining_seconds();
+    if (remaining <= 0) {
+        if (app) app.update();
+        showBetaLock();
+        return;
+    }
+    if (!handler.beta_is_verified()) return;
+    var countdown = $(#beta-countdown);
+    if (countdown) countdown.text = betaRemainingText(remaining);
+    self.timer(1s, updateBetaCountdown);
 }

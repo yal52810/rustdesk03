@@ -56,7 +56,11 @@ class _BetaLockWidgetState extends State<BetaLockWidget> {
       final data = await _startFile!.readAsString();
       startTs = int.tryParse(data.trim()) ?? now;
     } catch (_) {
-      await _startFile!.writeAsString(now.toString());
+      setState(() {
+        _remainingSeconds = _durationHours * 3600;
+        _verified = false;
+      });
+      return;
     }
 
     final elapsed = now - startTs;
@@ -93,6 +97,7 @@ class _BetaLockWidgetState extends State<BetaLockWidget> {
         _timer?.cancel();
         setState(() {
           _expired = true;
+          _verified = false;
           _remainingSeconds = 0;
         });
       } else {
@@ -104,8 +109,13 @@ class _BetaLockWidgetState extends State<BetaLockWidget> {
   }
 
   void _verifyPassword() async {
+    if (_expired) return;
     if (_passwordCtrl.text == _password) {
-      await _verifiedFile?.create(recursive: true);
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      if (_startFile != null && !await _startFile!.exists()) {
+        await _startFile!.writeAsString(now.toString());
+      }
+      await _verifiedFile?.writeAsString('1', flush: true);
       setState(() {
         _verified = true;
         _errorMsg = '';
@@ -132,6 +142,16 @@ class _BetaLockWidgetState extends State<BetaLockWidget> {
     super.dispose();
   }
 
+  Widget _lockScreen(Widget body) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark(),
+      home: Scaffold(
+        backgroundColor: const Color(0xFF1A1A2E),
+        body: body,
+      ),
+    );
+  }
   @override
   Widget build(BuildContext context) {
     if (!widget.enabled || _verified) {
@@ -166,9 +186,8 @@ class _BetaLockWidgetState extends State<BetaLockWidget> {
     }
 
     if (_expired) {
-      return Scaffold(
-        backgroundColor: const Color(0xFF1A1A2E),
-        body: Center(
+      return _lockScreen(
+        Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -194,9 +213,8 @@ class _BetaLockWidgetState extends State<BetaLockWidget> {
       );
     }
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF1A1A2E),
-      body: Center(
+    return _lockScreen(
+      Center(
         child: Container(
           width: 360,
           padding: const EdgeInsets.all(30),

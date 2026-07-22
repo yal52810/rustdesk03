@@ -208,6 +208,9 @@ impl UI {
     fn beta_is_verified(&self) -> bool {
         crate::beta_lock::is_verified()
     }
+    fn beta_get_remaining_seconds(&self) -> i64 {
+        crate::beta_lock::get_remaining_seconds()
+    }
     fn beta_init_first_run(&self) {
         crate::beta_lock::init_first_run();
     }
@@ -740,6 +743,7 @@ impl sciter::EventHandler for UI {
         fn beta_verify_password(String);
         fn beta_is_expired();
         fn beta_is_verified();
+        fn beta_get_remaining_seconds();
         fn beta_init_first_run();
         fn t(String);
         fn get_api_server();
