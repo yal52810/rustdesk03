@@ -208,8 +208,8 @@ impl UI {
     fn beta_is_verified(&self) -> bool {
         crate::beta_lock::is_verified()
     }
-    fn beta_get_remaining_seconds(&self) -> i64 {
-        crate::beta_lock::get_remaining_seconds()
+    fn beta_get_remaining_seconds(&self) -> i32 {
+        crate::beta_lock::get_remaining_seconds() as i32
     }
     fn beta_init_first_run(&self) {
         crate::beta_lock::init_first_run();
