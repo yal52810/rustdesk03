@@ -1,8 +1,3 @@
-build: off
-
-build_script:
-  - echo HELLO_WORLD_APPVEYOR
+install:
+  - echo HELLO_FROM_INSTALL
   - ver
-  - echo CurrentDir=%CD%
-  - dir Cargo.toml
-  - dir appveyor.yml
