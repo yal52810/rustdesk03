@@ -51,6 +51,7 @@ jobs:
         with:
           toolchain: ${{ env.RUST_VERSION }}
           targets: x86_64-pc-windows-msvc
+          components: rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           prefix-key: win64-${{ matrix.flavor }}
@@ -89,7 +90,7 @@ jobs:
         shell: pwsh
         env:
           RUSTDESK_BETA_LOCKED: ${{ matrix.beta_locked }}
-        run: python3 .\build.py --portable --flutter --skip-portable-pack --hwcodec --vram
+        run: python3 .\build.py --portable --flutter --skip-portable-pack
       - name: Package Win64 client
         shell: pwsh
         run: |
